@@ -328,9 +328,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 26788ae242c2aec41a3c18d90ab1ca76, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  dt: 10
-  diff: 10
-  visc: 10
+  dt: 1
+  diff: 1
+  visc: 1
+  gameObject: {fileID: 7736068124817768919, guid: 7666954abf07f3349a1e35bd3f58c09e, type: 3}
 --- !u!4 &1692742708
 Transform:
   m_ObjectHideFlags: 0

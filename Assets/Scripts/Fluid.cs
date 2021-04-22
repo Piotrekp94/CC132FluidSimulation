@@ -1,8 +1,11 @@
+using System;
 using UnityEngine;
+using UnityEngine.UIElements;
+using Random = UnityEngine.Random;
 
 public class Fluid : MonoBehaviour
 {
-    private static int size;
+    private static int _size;
     [SerializeField] private float dt;
     [SerializeField] private float diff;
     [SerializeField] private float visc;
@@ -23,54 +26,44 @@ public class Fluid : MonoBehaviour
 
     private void Start()
     {
-        size = 16;
-        objects = new GameObject[size * size * size];
+        _size = 16;
+        var arraySize = _size * _size * _size;
+        objects = new GameObject[arraySize];
 
-        s = new float[size * size * size];
-        density = new float[size * size * size];
-        Vx = new float[size * size * size];
-        Vy = new float[size * size * size];
-        Vz = new float[size * size * size];
-        Vxo = new float[size * size * size];
-        Vyo = new float[size * size * size];
-        Vzo = new float[size * size * size];
+        s = new float[arraySize];
+        density = new float[arraySize];
+        Vx = new float[arraySize];
+        Vy = new float[arraySize];
+        Vz = new float[arraySize];
+        Vxo = new float[arraySize];
+        Vyo = new float[arraySize];
+        Vzo = new float[arraySize];
 
-        GenerateCubes(size);
+        GenerateCubes(_size);
     }
 
     private void Update()
     {
-        var N = size;
-        var visc = this.visc;
-        var diff = this.diff;
-        var dt = this.dt;
-        var Vx = this.Vx;
-        var Vy = this.Vy;
-        var Vz = this.Vz;
-        var Vx0 = Vxo;
-        var Vy0 = Vyo;
-        var Vz0 = Vzo;
-        var s = this.s;
-        var density = this.density;
+        const int iter = 2;
 
-        diffuse(1, Vx0, Vx, visc, dt, 2, N);
-        diffuse(2, Vy0, Vy, visc, dt, 2, N);
-        diffuse(3, Vz0, Vz, visc, dt, 2, N);
+        Diffuse(1, Vxo, Vx, visc, dt, iter);
+        Diffuse(2, Vyo, Vy, visc, dt, iter);
+        Diffuse(3, Vzo, Vz, visc, dt, iter);
 
-        project(Vx0, Vy0, Vz0, Vx, Vy, 2, N);
+        project(Vxo, Vyo, Vzo, Vx, Vy, iter);
+        advect(1, Vx, Vxo, Vxo, Vyo, Vzo, dt);
+        advect(2, Vy, Vyo, Vxo, Vyo, Vzo, dt);
+        advect(3, Vz, Vzo, Vxo, Vyo, Vzo, dt);
 
-        advect(1, Vx, Vx0, Vx0, Vy0, Vz0, dt, N);
-        advect(2, Vy, Vy0, Vx0, Vy0, Vz0, dt, N);
-        advect(3, Vz, Vz0, Vx0, Vy0, Vz0, dt, N);
+        project(Vx, Vy, Vz, Vxo, Vyo, iter);
 
-        project(Vx, Vy, Vz, Vx0, Vy0, 2, N);
-
-        diffuse(0, s, density, diff, dt, 2, N);
-        advect(0, density, s, Vx, Vy, Vz, dt, N);
-
-
-        AddDensity(8, 8, 8, 3);
-        AddVelocity(8, 8, 8, 1, 1, 0);
+        Diffuse(0, s, density, diff, dt, iter);
+        advect(0, density, s, Vx, Vy, Vz, dt);
+        int x = Random.Range(0, 16);
+        int y = Random.Range(0, 16);
+        int z = Random.Range(0, 16);
+        AddDensity(x, y, z, 1000);
+        AddVelocity(x, y, z, 10, 10, 10);
         Render();
     }
 
@@ -84,18 +77,14 @@ public class Fluid : MonoBehaviour
 
     private void Render()
     {
-        for (var a = 0; a < size; a++)
-        for (var b = 0; b < size; b++)
-        for (var c = 0; c < size; c++)
+        for (var a = 0; a < _size; a++)
+        for (var b = 0; b < _size; b++)
+        for (var c = 0; c < _size; c++)
         {
             var adensity = density[IX(a, b, c)];
             var x = objects[IX(a, b, c)];
 
-            if (adensity <= 0.1)
-                x.SetActive(false);
-            else
-                x.SetActive(true);
-
+            // x.SetActive(!(adensity <= 0.01));
 
             x.GetComponent<MeshRenderer>().material.color = new Color(1.0f, 0.0f, 0.0f, density[IX(a, b, c)]);
         }
@@ -117,23 +106,23 @@ public class Fluid : MonoBehaviour
 
     private static int IX(int x, int y, int z)
     {
-        return x + y * size + z * size * size;
+        return x + y * _size + z * _size * _size;
     }
 
-    private static void diffuse(int b, float[] x, float[] x0, float diff, float dt, int iter, int N)
+    private static void Diffuse(int b, float[] x, float[] x0, float diff, float dt, int iter)
     {
-        var a = dt * diff * (N - 2) * (N - 2);
-        lin_solve(b, x, x0, a, 1 + 6 * a, iter, N);
+        var a = dt * diff * (_size - 2) * (_size - 2);
+        lin_solve(b, x, x0, a, 1 + 6 * a, iter);
     }
 
-    private static void lin_solve(int b, float[] x, float[] x0, float a, float c, int iter, int N)
+    private static void lin_solve(int b, float[] x, float[] x0, float a, float c, int iter)
     {
         var cRecip = (float) (1.0 / c);
         for (var k = 0; k < iter; k++)
         {
-            for (var m = 1; m < N - 1; m++)
-            for (var j = 1; j < N - 1; j++)
-            for (var i = 1; i < N - 1; i++)
+            for (var m = 1; m < _size - 1; m++)
+            for (var j = 1; j < _size - 1; j++)
+            for (var i = 1; i < _size - 1; i++)
                 x[IX(i, j, m)] =
                     (x0[IX(i, j, m)]
                      + a * (x[IX(i + 1, j, m)]
@@ -143,64 +132,64 @@ public class Fluid : MonoBehaviour
                             + x[IX(i, j, m + 1)]
                             + x[IX(i, j, m - 1)]
                      )) * cRecip;
-            set_bnd(b, x, N);
+            set_bnd(b, x);
         }
     }
 
-    private static void set_bnd(int b, float[] x, int N)
+    private static void set_bnd(int b, float[] x)
     {
-        for (var j = 1; j < N - 1; j++)
-        for (var i = 1; i < N - 1; i++)
+        for (var j = 1; j < _size - 1; j++)
+        for (var i = 1; i < _size - 1; i++)
         {
             x[IX(i, j, 0)] = b == 3 ? -x[IX(i, j, 1)] : x[IX(i, j, 1)];
-            x[IX(i, j, N - 1)] = b == 3 ? -x[IX(i, j, N - 2)] : x[IX(i, j, N - 2)];
+            x[IX(i, j, _size - 1)] = b == 3 ? -x[IX(i, j, _size - 2)] : x[IX(i, j, _size - 2)];
         }
 
-        for (var k = 1; k < N - 1; k++)
-        for (var i = 1; i < N - 1; i++)
+        for (var k = 1; k < _size - 1; k++)
+        for (var i = 1; i < _size - 1; i++)
         {
             x[IX(i, 0, k)] = b == 2 ? -x[IX(i, 1, k)] : x[IX(i, 1, k)];
-            x[IX(i, N - 1, k)] = b == 2 ? -x[IX(i, N - 2, k)] : x[IX(i, N - 2, k)];
+            x[IX(i, _size - 1, k)] = b == 2 ? -x[IX(i, _size - 2, k)] : x[IX(i, _size - 2, k)];
         }
 
-        for (var k = 1; k < N - 1; k++)
-        for (var j = 1; j < N - 1; j++)
+        for (var k = 1; k < _size - 1; k++)
+        for (var j = 1; j < _size - 1; j++)
         {
             x[IX(0, j, k)] = b == 1 ? -x[IX(1, j, k)] : x[IX(1, j, k)];
-            x[IX(N - 1, j, k)] = b == 1 ? -x[IX(N - 2, j, k)] : x[IX(N - 2, j, k)];
+            x[IX(_size - 1, j, k)] = b == 1 ? -x[IX(_size - 2, j, k)] : x[IX(_size - 2, j, k)];
         }
 
         x[IX(0, 0, 0)] = 0.33f * (x[IX(1, 0, 0)]
                                   + x[IX(0, 1, 0)]
                                   + x[IX(0, 0, 1)]);
-        x[IX(0, N - 1, 0)] = 0.33f * (x[IX(1, N - 1, 0)]
-                                      + x[IX(0, N - 2, 0)]
-                                      + x[IX(0, N - 1, 1)]);
-        x[IX(0, 0, N - 1)] = 0.33f * (x[IX(1, 0, N - 1)]
-                                      + x[IX(0, 1, N - 1)]
-                                      + x[IX(0, 0, N - 1)]);
-        x[IX(0, N - 1, N - 1)] = 0.33f * (x[IX(1, N - 1, N - 1)]
-                                          + x[IX(0, N - 2, N - 1)]
-                                          + x[IX(0, N - 1, N - 2)]);
-        x[IX(N - 1, 0, 0)] = 0.33f * (x[IX(N - 2, 0, 0)]
-                                      + x[IX(N - 1, 1, 0)]
-                                      + x[IX(N - 1, 0, 1)]);
-        x[IX(N - 1, N - 1, 0)] = 0.33f * (x[IX(N - 2, N - 1, 0)]
-                                          + x[IX(N - 1, N - 2, 0)]
-                                          + x[IX(N - 1, N - 1, 1)]);
-        x[IX(N - 1, 0, N - 1)] = 0.33f * (x[IX(N - 2, 0, N - 1)]
-                                          + x[IX(N - 1, 1, N - 1)]
-                                          + x[IX(N - 1, 0, N - 2)]);
-        x[IX(N - 1, N - 1, N - 1)] = 0.33f * (x[IX(N - 2, N - 1, N - 1)]
-                                              + x[IX(N - 1, N - 2, N - 1)]
-                                              + x[IX(N - 1, N - 1, N - 2)]);
+        x[IX(0, _size - 1, 0)] = 0.33f * (x[IX(1, _size - 1, 0)]
+                                          + x[IX(0, _size - 2, 0)]
+                                          + x[IX(0, _size - 1, 1)]);
+        x[IX(0, 0, _size - 1)] = 0.33f * (x[IX(1, 0, _size - 1)]
+                                          + x[IX(0, 1, _size - 1)]
+                                          + x[IX(0, 0, _size - 1)]);
+        x[IX(0, _size - 1, _size - 1)] = 0.33f * (x[IX(1, _size - 1, _size - 1)]
+                                                  + x[IX(0, _size - 2, _size - 1)]
+                                                  + x[IX(0, _size - 1, _size - 2)]);
+        x[IX(_size - 1, 0, 0)] = 0.33f * (x[IX(_size - 2, 0, 0)]
+                                          + x[IX(_size - 1, 1, 0)]
+                                          + x[IX(_size - 1, 0, 1)]);
+        x[IX(_size - 1, _size - 1, 0)] = 0.33f * (x[IX(_size - 2, _size - 1, 0)]
+                                                  + x[IX(_size - 1, _size - 2, 0)]
+                                                  + x[IX(_size - 1, _size - 1, 1)]);
+        x[IX(_size - 1, 0, _size - 1)] = 0.33f * (x[IX(_size - 2, 0, _size - 1)]
+                                                  + x[IX(_size - 1, 1, _size - 1)]
+                                                  + x[IX(_size - 1, 0, _size - 2)]);
+        x[IX(_size - 1, _size - 1, _size - 1)] = 0.33f * (x[IX(_size - 2, _size - 1, _size - 1)]
+                                                          + x[IX(_size - 1, _size - 2, _size - 1)]
+                                                          + x[IX(_size - 1, _size - 1, _size - 2)]);
     }
 
-    private static void project(float[] velocX, float[] velocY, float[] velocZ, float[] p, float[] div, int iter, int N)
+    private static void project(float[] velocX, float[] velocY, float[] velocZ, float[] p, float[] div, int iter)
     {
-        for (var k = 1; k < N - 1; k++)
-        for (var j = 1; j < N - 1; j++)
-        for (var i = 1; i < N - 1; i++)
+        for (var k = 1; k < _size - 1; k++)
+        for (var j = 1; j < _size - 1; j++)
+        for (var i = 1; i < _size - 1; i++)
         {
             div[IX(i, j, k)] = -0.5f * (
                 velocX[IX(i + 1, j, k)]
@@ -209,50 +198,49 @@ public class Fluid : MonoBehaviour
                 - velocY[IX(i, j - 1, k)]
                 + velocZ[IX(i, j, k + 1)]
                 - velocZ[IX(i, j, k - 1)]
-            ) / N;
+            ) / _size;
             p[IX(i, j, k)] = 0;
         }
 
-        set_bnd(0, div, N);
-        set_bnd(0, p, N);
-        lin_solve(0, p, div, 1, 6, iter, N);
+        set_bnd(0, div);
+        set_bnd(0, p);
+        lin_solve(0, p, div, 1, 6, iter);
 
-        for (var k = 1; k < N - 1; k++)
-        for (var j = 1; j < N - 1; j++)
-        for (var i = 1; i < N - 1; i++)
+        for (var k = 1; k < _size - 1; k++)
+        for (var j = 1; j < _size - 1; j++)
+        for (var i = 1; i < _size - 1; i++)
         {
             velocX[IX(i, j, k)] -= 0.5f * (p[IX(i + 1, j, k)]
-                                           - p[IX(i - 1, j, k)]) * N;
+                                           - p[IX(i - 1, j, k)]) * _size;
             velocY[IX(i, j, k)] -= 0.5f * (p[IX(i, j + 1, k)]
-                                           - p[IX(i, j - 1, k)]) * N;
+                                           - p[IX(i, j - 1, k)]) * _size;
             velocZ[IX(i, j, k)] -= 0.5f * (p[IX(i, j, k + 1)]
-                                           - p[IX(i, j, k - 1)]) * N;
+                                           - p[IX(i, j, k - 1)]) * _size;
         }
 
-        set_bnd(1, velocX, N);
-        set_bnd(2, velocY, N);
-        set_bnd(3, velocZ, N);
+        set_bnd(1, velocX);
+        set_bnd(2, velocY);
+        set_bnd(3, velocZ);
     }
 
-    private static void advect(int b, float[] d, float[] d0, float[] velocX, float[] velocY, float[] velocZ, float dt,
-        int N)
+    private static void advect(int b, float[] d, float[] d0, float[] velocX, float[] velocY, float[] velocZ, float dt)
     {
         float i0, i1, j0, j1, k0, k1;
 
-        var dtx = dt * (N - 2);
-        var dty = dt * (N - 2);
-        var dtz = dt * (N - 2);
+        var dtx = dt * (_size - 2);
+        var dty = dt * (_size - 2);
+        var dtz = dt * (_size - 2);
 
         float s0, s1, t0, t1, u0, u1;
         float tmp1, tmp2, tmp3, x, y, z;
 
-        float Nfloat = N;
+        float Nfloat = _size;
         float ifloat, jfloat, kfloat;
         int i, j, k;
 
-        for (k = 1, kfloat = 1; k < N - 1; k++, kfloat++)
-        for (j = 1, jfloat = 1; j < N - 1; j++, jfloat++)
-        for (i = 1, ifloat = 1; i < N - 1; i++, ifloat++)
+        for (k = 1, kfloat = 1; k < _size - 1; k++, kfloat++)
+        for (j = 1, jfloat = 1; j < _size - 1; j++, jfloat++)
+        for (i = 1, ifloat = 1; i < _size - 1; i++, ifloat++)
         {
             tmp1 = dtx * velocX[IX(i, j, k)];
             tmp2 = dty * velocY[IX(i, j, k)];
@@ -299,6 +287,6 @@ public class Fluid : MonoBehaviour
                                 + u1 * d0[IX(i1i, j1i, k1i)]));
         }
 
-        set_bnd(b, d, N);
+        set_bnd(b, d);
     }
 }
